@@ -74,6 +74,7 @@ function (record, search, runtime, log, url) {
 
             const bomComponents = [];
             const allComponents = [];
+            const itemUomMap    = {};
 
             let sublistId = 'item';
             let lineCount = woRec.getLineCount({ sublistId: 'item' });
@@ -98,7 +99,6 @@ function (record, search, runtime, log, url) {
                 const colItemName  = search.createColumn({ name: 'itemid' });
                 const colStockUnit = search.createColumn({ name: 'stockunit' });
                 const itemNameMap  = {};
-                const itemUomMap   = {};
                 search.create({
                     type:    search.Type.ITEM,
                     filters: [['internalid', 'anyof', itemIds]],
@@ -142,6 +142,7 @@ function (record, search, runtime, log, url) {
             });
 
             const history = getPrebuildHistory(woId);
+            history.forEach(function (h) { h.uom = itemUomMap[h.itemId] || ''; });
 
             const seenRowItems = {};
             const dedupedRows  = rows.filter(function (r) {
@@ -431,6 +432,7 @@ function (record, search, runtime, log, url) {
                 history.push({
                     name:        r.getValue(colName)  || '',
                     item:        r.getText(colItem)   || '',
+                    itemId:      r.getValue(colItem)  || '',
                     lot:         r.getValue(colLot)   || '',
                     weight:      r.getValue(colWt)    || 0,
                     onHand:      r.getValue(colOH)    || 0,
@@ -510,13 +512,14 @@ function (record, search, runtime, log, url) {
                     '<tr><td>' + esc(h.item) + '</td><td>' + esc(h.lot) + '</td>' +
                     '<td class="right">' + esc(h.onHand) + '</td>' +
                     '<td class="right">' + esc(h.weight) + '</td>' +
+                    '<td class="td-uom">' + esc(h.uom || '—') + '</td>' +
                     '<td class="right ' + adjClass + '">' + (parseFloat(h.adjQty) > 0 ? '+' : '') + esc(h.adjQty) + '</td>' +
                     '<td>' + esc(h.submittedAt) + '</td></tr>';
             });
             historyHtml =
                 '<div class="section-title">Previous Submissions</div>' +
                 '<table><thead><tr>' +
-                '<th>Item</th><th>Lot</th><th style="text-align:right;">On-Hand at Weigh-In</th><th style="text-align:right;">Pre-Build Weight</th><th style="text-align:right;">Adjustment</th><th>Submitted At</th>' +
+                '<th>Item</th><th>Lot</th><th style="text-align:right;">On-Hand at Weigh-In</th><th style="text-align:right;">Pre-Build Weight</th><th>UOM</th><th style="text-align:right;">Adjustment</th><th>Submitted At</th>' +
                 '</tr></thead><tbody>' + histRows + '</tbody></table>';
         }
 
