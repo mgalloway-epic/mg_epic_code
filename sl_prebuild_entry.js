@@ -518,9 +518,11 @@ function (record, search, runtime, log, url) {
             });
             historyHtml =
                 '<div class="section-title">Previous Submissions</div>' +
+                '<div class="table-scroll-sm">' +
                 '<table><thead><tr>' +
                 '<th>Item</th><th>Lot</th><th style="text-align:right;">On-Hand at Weigh-In</th><th style="text-align:right;">Pre-Build Weight</th><th>UOM</th><th style="text-align:right;">Adjustment</th><th>Submitted At</th>' +
-                '</tr></thead><tbody>' + histRows + '</tbody></table>';
+                '</tr></thead><tbody>' + histRows + '</tbody></table>' +
+                '</div>';
         }
 
         return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pre-Build Weigh-In — ' + esc(woNumber) + '</title>' +
@@ -543,8 +545,11 @@ function (record, search, runtime, log, url) {
             '.page-body { padding: 16px 20px; }' +
             '.hint { font-size: 11px; color: #666; margin-bottom: 14px; line-height: 1.65; max-width: 820px; }' +
             /* Table */
-            'table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #b4bece; }' +
-            'th { background: #c5d0e0; color: #2a2a2a; padding: 7px 12px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #a2b0c4; vertical-align: top; }' +
+            'table { width: 100%; border-collapse: collapse; background: #fff; }' +
+            /* Scrollable wrapper — outer border lives here so it encapsulates cleanly */
+            '.table-scroll    { overflow: auto; max-height: 420px; border: 1px solid #b4bece; }' +
+            '.table-scroll-sm { overflow: auto; max-height: 280px; border: 1px solid #b4bece; }' +
+            'th { background: #c5d0e0; color: #2a2a2a; padding: 7px 12px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #a2b0c4; vertical-align: top; position: sticky; top: 0; z-index: 1; }' +
             'td { padding: 6px 12px; border-bottom: 1px solid #dde3ed; border-right: 1px solid #dde3ed; vertical-align: middle; font-size: 12px; }' +
             /* Alternating rows — white / very subtle blue tint */
             '.row-even td { background: #fff; }' +
@@ -583,6 +588,7 @@ function (record, search, runtime, log, url) {
             '<form id="prebuildForm" method="POST" action="' + esc(postUrl) + '" onsubmit="return validateForm();">' +
             '<input type="hidden" name="wo_id"     value="' + esc(woId)     + '" />' +
             '<input type="hidden" name="row_count" value="' + esc(totalRows) + '" />' +
+            '<div class="table-scroll">' +
             '<table id="lotTable"><thead><tr>' +
             '<th>Item</th>' +
             '<th>Lot Number' +
@@ -592,6 +598,7 @@ function (record, search, runtime, log, url) {
             '</th>' +
             '<th>Bin</th><th style="text-align:right;">Current On-Hand Qty</th><th>Pre-Build Weight</th><th>UOM</th>' +
             '</tr></thead><tbody id="lotTbody">' + tableRows + '</tbody></table>' +
+            '</div>' +
             '<div id="noMatchMsg" class="no-match-msg">No lots match your search.</div>' +
             '</form>' +
             historyHtml +
