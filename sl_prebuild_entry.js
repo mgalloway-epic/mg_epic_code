@@ -94,16 +94,20 @@ function (record, search, runtime, log, url) {
             }
 
             if (allComponents.length > 0) {
-                const itemIds     = [...new Set(allComponents.map(function (c) { return c.itemId; }))];
-                const colItemName = search.createColumn({ name: 'itemid' });
-                const itemNameMap = {};
+                const itemIds      = [...new Set(allComponents.map(function (c) { return c.itemId; }))];
+                const colItemName  = search.createColumn({ name: 'itemid' });
+                const colStockUnit = search.createColumn({ name: 'stockunit' });
+                const itemNameMap  = {};
+                const itemUomMap   = {};
                 search.create({
                     type:    search.Type.ITEM,
                     filters: [['internalid', 'anyof', itemIds]],
-                    columns: [ search.createColumn({ name: 'internalid' }), colItemName ]
+                    columns: [ search.createColumn({ name: 'internalid' }), colItemName, colStockUnit ]
                 }).run().each(function (r) {
                     const v = r.getValue(colItemName);
                     itemNameMap[r.id] = (v && typeof v === 'string') ? v : String(r.id);
+                    const u = r.getText(colStockUnit);
+                    itemUomMap[r.id]  = (u && typeof u === 'string') ? u : '';
                     return true;
                 });
 
@@ -112,7 +116,7 @@ function (record, search, runtime, log, url) {
                     const prefix   = typeof itemName === 'string' ? itemName.substring(0, 2).toUpperCase() : '';
                     if (prefix === 'BS' || prefix === 'MX') {
                         const comp = allComponents.find(function (c) { return c.itemId === itemId; });
-                        bomComponents.push({ itemId: itemId, itemName, qty: comp ? comp.qty : 0 });
+                        bomComponents.push({ itemId: itemId, itemName, uom: itemUomMap[itemId] || '', qty: comp ? comp.qty : 0 });
                     }
                 });
 
@@ -128,10 +132,10 @@ function (record, search, runtime, log, url) {
             bomComponents.forEach(function (comp) {
                 const lots = getLotsForItem(comp.itemId, locId);
                 if (!lots.length) {
-                    rows.push({ itemId: comp.itemId, itemName: comp.itemName, bomQty: comp.qty,
+                    rows.push({ itemId: comp.itemId, itemName: comp.itemName, uom: comp.uom, bomQty: comp.qty,
                                 lotId: '', lotText: 'No lots found', binId: '', binName: '', onHand: 0, lots: [] });
                 } else {
-                    rows.push({ itemId: comp.itemId, itemName: comp.itemName, bomQty: comp.qty,
+                    rows.push({ itemId: comp.itemId, itemName: comp.itemName, uom: comp.uom, bomQty: comp.qty,
                                 lotId: lots[0].id, lotText: lots[0].text, binId: lots[0].binId,
                                 binName: lots[0].binName, onHand: lots[0].onHand, lots: lots });
                 }
@@ -463,6 +467,7 @@ function (record, search, runtime, log, url) {
                     '<td class="td-bin muted">—</td>' +
                     '<td class="td-qty right muted">—</td>' +
                     '<td class="td-weight"><span class="muted">No lot available</span></td>' +
+                    '<td class="td-uom muted">—</td>' +
                     '</tr>' +
                     '<input type="hidden" name="item_id_'   + rowIndex + '" value="' + esc(row.itemId)   + '" />' +
                     '<input type="hidden" name="item_name_' + rowIndex + '" value="' + esc(row.itemName) + '" />' +
@@ -482,6 +487,7 @@ function (record, search, runtime, log, url) {
                     '<td class="td-bin">'       + esc(lot.binName || '—') + '</td>' +
                     '<td class="td-qty right">' + esc(lot.onHand)         + '</td>' +
                     '<td class="td-weight"><input type="number" name="prebuild_weight_' + rowIndex + '" min="0" step="0.001" class="field-num" placeholder="0.000" /></td>' +
+                    '<td class="td-uom">'       + esc(row.uom || '—')    + '</td>' +
                     '</tr>' +
                     '<input type="hidden" name="item_id_'   + rowIndex + '" value="' + esc(row.itemId)   + '" />' +
                     '<input type="hidden" name="item_name_' + rowIndex + '" value="' + esc(row.itemName) + '" />' +
@@ -517,49 +523,47 @@ function (record, search, runtime, log, url) {
         return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pre-Build Weigh-In — ' + esc(woNumber) + '</title>' +
             '<style>' +
             '*, *::before, *::after { box-sizing: border-box; }' +
-            /* NetSuite body: white content area on a very light gray page bg */
             'body { margin: 0; background: #f5f7f9; font-family: Arial, sans-serif; font-size: 12px; color: #333; }' +
-            /* Page title bar — white with a bottom border, matching NS record headers */
-            '.page-header { background: #fff; border-bottom: 2px solid #c8d2e0; padding: 10px 18px; }' +
-            '.page-header h1 { margin: 0 0 2px; font-size: 16px; font-weight: bold; color: #1f1f1f; }' +
+            /* Page title bar */
+            '.page-header { background: #fff; border-bottom: 2px solid #c8d2e0; padding: 12px 20px; }' +
+            '.page-header h1 { margin: 0 0 3px; font-size: 15px; font-weight: bold; color: #1f1f1f; letter-spacing: .01em; }' +
             '.page-header .wo-ref { font-size: 11px; color: #666; }' +
             '.page-header .wo-ref span { color: #1778c5; font-weight: bold; }' +
-            /* NS-style toolbar bar (mirrors the Save/Cancel bar on NS forms) */
-            '.btn-bar { background: #edf1f7; border-bottom: 1px solid #c0cad8; padding: 5px 18px; display: flex; gap: 8px; align-items: center; }' +
+            /* Toolbar */
+            '.btn-bar { background: #edf1f7; border-bottom: 1px solid #c0cad8; padding: 6px 20px; display: flex; gap: 8px; align-items: center; }' +
             /* NS blue primary button */
-            '.btn-primary { background: #1778c5; color: #fff; border: 1px solid #1060a3; padding: 5px 20px; font-size: 12px; font-weight: bold; cursor: pointer; border-radius: 2px; white-space: nowrap; }' +
+            '.btn-primary { background: #1778c5; color: #fff; border: 1px solid #1060a3; padding: 5px 22px; font-size: 12px; font-weight: bold; cursor: pointer; border-radius: 2px; white-space: nowrap; line-height: 1.6; }' +
             '.btn-primary:hover { background: #1464a8; }' +
-            /* NS secondary/cancel button */
-            '.btn-secondary { background: #fff; color: #444; border: 1px solid #999; padding: 5px 14px; font-size: 12px; cursor: pointer; border-radius: 2px; white-space: nowrap; }' +
-            '.btn-secondary:hover { background: #f0f0f0; }' +
-            '.page-body { padding: 14px 18px; }' +
-            '.hint { font-size: 11px; color: #666; margin-bottom: 12px; line-height: 1.6; }' +
-            /* NS table: flat borders, blue-gray column headers, alternating rows */
+            /* NS cancel button */
+            '.btn-secondary { background: #fff; color: #444; border: 1px solid #aaa; padding: 5px 16px; font-size: 12px; cursor: pointer; border-radius: 2px; white-space: nowrap; line-height: 1.6; }' +
+            '.btn-secondary:hover { background: #f4f6f9; }' +
+            '.page-body { padding: 16px 20px; }' +
+            '.hint { font-size: 11px; color: #666; margin-bottom: 14px; line-height: 1.65; max-width: 820px; }' +
+            /* Table */
             'table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #b4bece; }' +
-            'th { background: #c5d0e0; color: #333; padding: 6px 10px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #a0aec0; vertical-align: top; white-space: nowrap; }' +
-            'td { padding: 5px 10px; border-bottom: 1px solid #dce2ec; border-right: 1px solid #dce2ec; vertical-align: middle; font-size: 12px; }' +
-            /* NS alternating row colors: white / light blue-tinted */
+            'th { background: #c5d0e0; color: #2a2a2a; padding: 7px 12px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #a2b0c4; vertical-align: top; }' +
+            'td { padding: 6px 12px; border-bottom: 1px solid #dde3ed; border-right: 1px solid #dde3ed; vertical-align: middle; font-size: 12px; }' +
+            /* Alternating rows — white / very subtle blue tint */
             '.row-even td { background: #fff; }' +
-            '.row-odd  td { background: #eef2f9; }' +
+            '.row-odd  td { background: #f3f6fb; }' +
             '.td-item { min-width: 180px; } .td-lot { min-width: 160px; } .td-bin { min-width: 100px; }' +
-            '.td-qty { min-width: 130px; } .td-weight { min-width: 150px; }' +
+            '.td-qty { min-width: 130px; } .td-weight { min-width: 140px; } .td-uom { min-width: 60px; color: #555; }' +
             '.right { text-align: right; }' +
-            '.muted { color: #999; font-style: italic; }' +
+            '.muted { color: #aaa; font-style: italic; }' +
             '.adj-pos { color: #1a6e1a; font-weight: bold; }' +
             '.adj-neg { color: #b30000; font-weight: bold; }' +
-            /* NS-style number input */
-            '.field-num { width: 100px; padding: 3px 6px; border: 1px solid #999; font-size: 12px; text-align: right; background: #fff; }' +
-            '.field-num:focus { border-color: #1778c5; outline: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.08); }' +
-            /* Lot search inside column header */
-            '.lot-search-wrap { position: relative; margin-top: 5px; }' +
-            '.lot-search-wrap::before { content: "\\1F50D"; position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 10px; pointer-events: none; opacity: .5; }' +
-            '.lot-search { width: 100%; padding: 3px 6px 3px 22px; border: 1px solid #999; font-size: 11px; font-weight: normal; letter-spacing: 0; text-transform: none; color: #333; background: #fff; border-radius: 1px; }' +
+            /* Number input */
+            '.field-num { width: 110px; padding: 4px 7px; border: 1px solid #aaa; font-size: 12px; text-align: right; background: #fff; transition: border-color .15s; }' +
+            '.field-num:focus { border-color: #1778c5; outline: none; box-shadow: inset 0 1px 2px rgba(0,0,0,.07); }' +
+            /* Lot search in header */
+            '.lot-search-wrap { position: relative; margin-top: 6px; }' +
+            '.lot-search-wrap::before { content: "\\1F50D"; position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 10px; pointer-events: none; opacity: .45; }' +
+            '.lot-search { width: 100%; padding: 4px 7px 4px 22px; border: 1px solid #aaa; font-size: 11px; font-weight: normal; letter-spacing: 0; text-transform: none; color: #333; background: #fff; transition: border-color .15s; }' +
             '.lot-search:focus { border-color: #1778c5; outline: none; }' +
-            '.lot-search::placeholder { color: #aaa; font-style: italic; }' +
+            '.lot-search::placeholder { color: #bbb; font-style: italic; }' +
             '.no-match-msg { display: none; padding: 14px; text-align: center; color: #999; font-style: italic; font-size: 12px; background: #fff; border: 1px solid #b4bece; border-top: none; }' +
-            /* Previous submissions section header */
-            '.section-title { margin: 22px 0 8px; font-size: 12px; font-weight: bold; color: #333; border-bottom: 1px solid #c8d2e0; padding-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }' +
-            'h3 { margin: 0; }' +
+            /* Section label */
+            '.section-title { margin: 24px 0 9px; font-size: 11px; font-weight: bold; color: #555; border-bottom: 1px solid #c8d2e0; padding-bottom: 5px; text-transform: uppercase; letter-spacing: .06em; }' +
             '</style></head><body>' +
             /* Page title - NS record header style */
             '<div class="page-header">' +
@@ -583,7 +587,7 @@ function (record, search, runtime, log, url) {
                     '<input type="text" id="lotSearch" class="lot-search" placeholder="Search lots…" oninput="filterLots(this.value);" autocomplete="off" />' +
                 '</div>' +
             '</th>' +
-            '<th>Bin</th><th style="text-align:right;">Current On-Hand Qty</th><th>Pre-Build Weight</th>' +
+            '<th>Bin</th><th style="text-align:right;">Current On-Hand Qty</th><th>Pre-Build Weight</th><th>UOM</th>' +
             '</tr></thead><tbody id="lotTbody">' + tableRows + '</tbody></table>' +
             '<div id="noMatchMsg" class="no-match-msg">No lots match your search.</div>' +
             '</form>' +
