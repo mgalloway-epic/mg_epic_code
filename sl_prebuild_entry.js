@@ -508,7 +508,7 @@ function (record, search, runtime, log, url) {
                     '<td>' + esc(h.submittedAt) + '</td></tr>';
             });
             historyHtml =
-                '<h3 style="margin:28px 0 10px;color:#444;font-size:13px;text-transform:uppercase;letter-spacing:.04em;">Previous Submissions</h3>' +
+                '<div class="section-title">Previous Submissions</div>' +
                 '<table><thead><tr>' +
                 '<th>Item</th><th>Lot</th><th style="text-align:right;">On-Hand at Weigh-In</th><th style="text-align:right;">Pre-Build Weight</th><th style="text-align:right;">Adjustment</th><th>Submitted At</th>' +
                 '</tr></thead><tbody>' + histRows + '</tbody></table>';
@@ -517,42 +517,63 @@ function (record, search, runtime, log, url) {
         return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pre-Build Weigh-In — ' + esc(woNumber) + '</title>' +
             '<style>' +
             '*, *::before, *::after { box-sizing: border-box; }' +
-            'body { margin: 0; background: #f0f2f5; font-family: Arial, sans-serif; font-size: 13px; color: #222; }' +
-            '.page-header { background: #2e5a1c; color: #fff; padding: 18px 28px; }' +
-            '.page-header h1 { margin: 0; font-size: 18px; font-weight: bold; }' +
-            '.page-header p  { margin: 4px 0 0; font-size: 12px; opacity: .75; }' +
-            '.page-body { padding: 24px 28px; }' +
-            '.hint { font-size: 12px; color: #666; margin-bottom: 16px; }' +
-            'table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.1); }' +
-            'th { background: #e4e8ee; color: #333; padding: 10px 14px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 2px solid #ccd0d8; vertical-align: top; }' +
-            'td { padding: 9px 14px; border-bottom: 1px solid #eef0f3; vertical-align: middle; }' +
-            '.row-even td { background: #fff; } .row-odd td { background: #fafbfc; }' +
-            'tr.hidden-row { display: none; }' +
-            '.td-item { min-width: 180px; } .td-lot { min-width: 140px; } .td-bin { min-width: 100px; }' +
-            '.td-qty { min-width: 120px; } .td-weight { min-width: 140px; }' +
+            /* NetSuite body: white content area on a very light gray page bg */
+            'body { margin: 0; background: #f5f7f9; font-family: Arial, sans-serif; font-size: 12px; color: #333; }' +
+            /* Page title bar — white with a bottom border, matching NS record headers */
+            '.page-header { background: #fff; border-bottom: 2px solid #c8d2e0; padding: 10px 18px; }' +
+            '.page-header h1 { margin: 0 0 2px; font-size: 16px; font-weight: bold; color: #1f1f1f; }' +
+            '.page-header .wo-ref { font-size: 11px; color: #666; }' +
+            '.page-header .wo-ref span { color: #1778c5; font-weight: bold; }' +
+            /* NS-style toolbar bar (mirrors the Save/Cancel bar on NS forms) */
+            '.btn-bar { background: #edf1f7; border-bottom: 1px solid #c0cad8; padding: 5px 18px; display: flex; gap: 8px; align-items: center; }' +
+            /* NS blue primary button */
+            '.btn-primary { background: #1778c5; color: #fff; border: 1px solid #1060a3; padding: 5px 20px; font-size: 12px; font-weight: bold; cursor: pointer; border-radius: 2px; white-space: nowrap; }' +
+            '.btn-primary:hover { background: #1464a8; }' +
+            /* NS secondary/cancel button */
+            '.btn-secondary { background: #fff; color: #444; border: 1px solid #999; padding: 5px 14px; font-size: 12px; cursor: pointer; border-radius: 2px; white-space: nowrap; }' +
+            '.btn-secondary:hover { background: #f0f0f0; }' +
+            '.page-body { padding: 14px 18px; }' +
+            '.hint { font-size: 11px; color: #666; margin-bottom: 12px; line-height: 1.6; }' +
+            /* NS table: flat borders, blue-gray column headers, alternating rows */
+            'table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #b4bece; }' +
+            'th { background: #c5d0e0; color: #333; padding: 6px 10px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #a0aec0; vertical-align: top; white-space: nowrap; }' +
+            'td { padding: 5px 10px; border-bottom: 1px solid #dce2ec; border-right: 1px solid #dce2ec; vertical-align: middle; font-size: 12px; }' +
+            /* NS alternating row colors: white / light blue-tinted */
+            '.row-even td { background: #fff; }' +
+            '.row-odd  td { background: #eef2f9; }' +
+            '.td-item { min-width: 180px; } .td-lot { min-width: 160px; } .td-bin { min-width: 100px; }' +
+            '.td-qty { min-width: 130px; } .td-weight { min-width: 150px; }' +
             '.right { text-align: right; }' +
-            '.muted { color: #aaa; font-style: italic; }' +
-            '.adj-pos { color: #2e7d32; font-weight: bold; }' +
-            '.adj-neg { color: #c62828; font-weight: bold; }' +
-            '.field-num { width: 100px; padding: 5px 8px; border: 1px solid #ccc; border-radius: 3px; font-size: 13px; text-align: right; }' +
-            '.field-num:focus { border-color: #2e5a1c; outline: none; box-shadow: 0 0 0 2px rgba(46,90,28,.15); }' +
-            '.lot-search-wrap { position: relative; margin-top: 6px; }' +
-            '.lot-search-wrap::before { content: "\\1F50D"; position: absolute; left: 7px; top: 50%; transform: translateY(-50%); font-size: 11px; pointer-events: none; opacity: .55; }' +
-            '.lot-search { width: 100%; padding: 5px 8px 5px 24px; border: 1px solid #b0b8c4; border-radius: 3px; font-size: 12px; font-weight: normal; text-transform: none; letter-spacing: 0; color: #333; background: #fff; }' +
-            '.lot-search:focus { border-color: #2e5a1c; outline: none; box-shadow: 0 0 0 2px rgba(46,90,28,.2); }' +
+            '.muted { color: #999; font-style: italic; }' +
+            '.adj-pos { color: #1a6e1a; font-weight: bold; }' +
+            '.adj-neg { color: #b30000; font-weight: bold; }' +
+            /* NS-style number input */
+            '.field-num { width: 100px; padding: 3px 6px; border: 1px solid #999; font-size: 12px; text-align: right; background: #fff; }' +
+            '.field-num:focus { border-color: #1778c5; outline: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.08); }' +
+            /* Lot search inside column header */
+            '.lot-search-wrap { position: relative; margin-top: 5px; }' +
+            '.lot-search-wrap::before { content: "\\1F50D"; position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 10px; pointer-events: none; opacity: .5; }' +
+            '.lot-search { width: 100%; padding: 3px 6px 3px 22px; border: 1px solid #999; font-size: 11px; font-weight: normal; letter-spacing: 0; text-transform: none; color: #333; background: #fff; border-radius: 1px; }' +
+            '.lot-search:focus { border-color: #1778c5; outline: none; }' +
             '.lot-search::placeholder { color: #aaa; font-style: italic; }' +
-            '.no-match-msg { display: none; padding: 16px; text-align: center; color: #999; font-style: italic; font-size: 12px; background: #fff; }' +
-            '.actions { margin-top: 20px; display: flex; gap: 12px; justify-content: flex-end; }' +
-            '.btn-primary { background: #2e5a1c; color: #fff; border: none; padding: 11px 32px; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; }' +
-            '.btn-primary:hover { background: #234515; }' +
-            '.btn-secondary { background: #fff; color: #444; border: 1px solid #bbb; padding: 11px 24px; border-radius: 4px; font-size: 14px; cursor: pointer; }' +
-            '.btn-secondary:hover { background: #f5f5f5; }' +
+            '.no-match-msg { display: none; padding: 14px; text-align: center; color: #999; font-style: italic; font-size: 12px; background: #fff; border: 1px solid #b4bece; border-top: none; }' +
+            /* Previous submissions section header */
+            '.section-title { margin: 22px 0 8px; font-size: 12px; font-weight: bold; color: #333; border-bottom: 1px solid #c8d2e0; padding-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }' +
             'h3 { margin: 0; }' +
             '</style></head><body>' +
-            '<div class="page-header"><h1>Pre-Build Weigh-In</h1><p>Work Order: ' + esc(woNumber) + '</p></div>' +
+            /* Page title - NS record header style */
+            '<div class="page-header">' +
+                '<h1>Pre-Build Weigh-In</h1>' +
+                '<div class="wo-ref">Work Order: <span>' + esc(woNumber) + '</span></div>' +
+            '</div>' +
+            /* NS-style toolbar with action buttons at the top */
+            '<div class="btn-bar">' +
+                '<button type="submit" form="prebuildForm" class="btn-primary">Submit Weigh-In</button>' +
+                '<button type="button" class="btn-secondary" onclick="window.close();">Cancel</button>' +
+            '</div>' +
             '<div class="page-body">' +
             '<p class="hint">Enter the scale weight for each bulk seed lot before starting the build. An inventory adjustment will be posted immediately to reconcile any humidity gain or loss. Leave any lot blank to skip it.</p>' +
-            '<form method="POST" action="' + esc(postUrl) + '" onsubmit="return validateForm();">' +
+            '<form id="prebuildForm" method="POST" action="' + esc(postUrl) + '" onsubmit="return validateForm();">' +
             '<input type="hidden" name="wo_id"     value="' + esc(woId)     + '" />' +
             '<input type="hidden" name="row_count" value="' + esc(totalRows) + '" />' +
             '<table id="lotTable"><thead><tr>' +
@@ -565,10 +586,7 @@ function (record, search, runtime, log, url) {
             '<th>Bin</th><th style="text-align:right;">Current On-Hand Qty</th><th>Pre-Build Weight</th>' +
             '</tr></thead><tbody id="lotTbody">' + tableRows + '</tbody></table>' +
             '<div id="noMatchMsg" class="no-match-msg">No lots match your search.</div>' +
-            '<div class="actions">' +
-            '<button type="button" class="btn-secondary" onclick="window.close();">Cancel</button>' +
-            '<button type="submit" class="btn-primary">Submit Weigh-In</button>' +
-            '</div></form>' +
+            '</form>' +
             historyHtml +
             '</div>' +
             '<script>' +
@@ -593,11 +611,11 @@ function (record, search, runtime, log, url) {
 
     function successPage(woId, woNumber) {
         const woUrl = '/app/accounting/transactions/workord.nl?id=' + woId;
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=' + woUrl + '"><style>*{box-sizing:border-box;font-family:Arial,sans-serif;}body{background:#f0f2f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}.card{background:#fff;border-radius:8px;padding:48px 40px;text-align:center;max-width:420px;width:100%;box-shadow:0 2px 12px rgba(0,0,0,.1);}.icon{font-size:52px;color:#2e5a1c;}h2{color:#2e5a1c;margin:12px 0 8px;}p{color:#666;margin:4px 0;}a{display:inline-block;margin-top:24px;background:#2e5a1c;color:#fff;text-decoration:none;padding:11px 32px;border-radius:4px;font-size:14px;font-weight:bold;}</style></head><body><div class="card"><div class="icon">&#9881;</div><h2>Weigh-In Submitted</h2><p>Inventory adjustment posted.</p><p style="font-size:12px;color:#999;margin-top:8px;">Redirecting to WO ' + esc(woNumber) + '...</p><a href="' + woUrl + '">Go to Work Order Now</a></div></body></html>';
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=' + woUrl + '"><style>*{box-sizing:border-box;font-family:Arial,sans-serif;}body{background:#f5f7f9;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}.card{background:#fff;border:1px solid #c8d2e0;padding:40px 36px;text-align:center;max-width:400px;width:100%;}.icon{font-size:42px;color:#1778c5;margin-bottom:8px;}h2{color:#1f1f1f;margin:0 0 8px;font-size:16px;}p{color:#666;margin:4px 0;font-size:12px;}a{display:inline-block;margin-top:20px;background:#1778c5;color:#fff;text-decoration:none;padding:6px 20px;font-size:12px;font-weight:bold;border:1px solid #1060a3;border-radius:2px;}</style></head><body><div class="card"><div class="icon">&#10003;</div><h2>Weigh-In Submitted</h2><p>Inventory adjustment posted.</p><p style="color:#999;margin-top:8px;">Redirecting to WO ' + esc(woNumber) + '&#8230;</p><a href="' + woUrl + '">Go to Work Order Now</a></div></body></html>';
     }
 
     function errorPage(msg) {
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box;font-family:Arial,sans-serif;}body{background:#f0f2f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}.card{background:#fff;border-radius:8px;padding:48px 40px;text-align:center;max-width:480px;width:100%;box-shadow:0 2px 12px rgba(0,0,0,.1);}.icon{font-size:52px;color:#c62828;}h2{color:#c62828;margin:12px 0 8px;}p{color:#555;white-space:pre-wrap;text-align:left;font-size:13px;background:#fff8f8;border:1px solid #fcc;border-radius:4px;padding:12px;margin-top:12px;}button{margin-top:24px;background:#555;color:#fff;border:none;padding:11px 28px;border-radius:4px;font-size:14px;cursor:pointer;}</style></head><body><div class="card"><div class="icon">&#10007;</div><h2>Something went wrong</h2><p>' + esc(msg) + '</p><button onclick="window.history.back();">Go Back &amp; Fix</button></div></body></html>';
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box;font-family:Arial,sans-serif;}body{background:#f5f7f9;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}.card{background:#fff;border:1px solid #c8d2e0;padding:36px;text-align:center;max-width:480px;width:100%;}.icon{font-size:36px;color:#b30000;margin-bottom:8px;}h2{color:#1f1f1f;margin:0 0 8px;font-size:15px;}p{color:#555;white-space:pre-wrap;text-align:left;font-size:12px;background:#fff5f5;border:1px solid #e0b0b0;padding:10px;margin-top:10px;}button{margin-top:18px;background:#1778c5;color:#fff;border:1px solid #1060a3;padding:5px 18px;font-size:12px;font-weight:bold;cursor:pointer;border-radius:2px;}</style></head><body><div class="card"><div class="icon">&#10007;</div><h2>Something went wrong</h2><p>' + esc(msg) + '</p><button onclick="window.history.back();">Go Back &amp; Fix</button></div></body></html>';
     }
 
     return { onRequest };
