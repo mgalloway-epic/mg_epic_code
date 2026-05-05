@@ -22,29 +22,21 @@ function (record, search, runtime, log, url) {
         if (!woId) { context.response.write(errorPage('No Work Order ID was provided.')); return; }
 
         try {
-            const woRec          = record.load({ type: 'workorder', id: woId });
-            const woNumber       = woRec.getValue({ fieldId: 'tranid' });
-            const locationId     = woRec.getValue({ fieldId: 'location' });
-            const assemblyItemId = String(woRec.getValue({ fieldId: 'assemblyitem' }));
+            const woRec      = record.load({ type: 'workorder', id: woId });
+            const woNumber   = woRec.getValue({ fieldId: 'tranid' });
 
-            // Get assembly item's itemid (SKU)
-            const asmLookup        = search.lookupFields({ type: search.Type.ITEM, id: assemblyItemId, columns: ['itemid'] });
-            const assemblyItemName = asmLookup.itemid || assemblyItemId;
-
-            // Most recent build
-            const buildResults = search.create({
+            // Get ALL assembly builds for this WO
+            const allBuildIds = [];
+            search.create({
                 type:    'assemblybuild',
                 filters: [['createdfrom', 'anyof', woId]],
-                columns: [search.createColumn({ name: 'internalid' }), search.createColumn({ name: 'trandate', sort: search.Sort.DESC })]
-            }).run().getRange({ start: 0, end: 1 });
+                columns: [search.createColumn({ name: 'internalid' })]
+            }).run().each(function (r) {
+                allBuildIds.push(r.id);
+                return true;
+            });
 
-            if (!buildResults.length) { context.response.write(errorPage('No Assembly Build found for WO ' + woNumber + '.')); return; }
-
-            const buildId = buildResults[0].id;
-
-            // Load with isDynamic: true so subrecords are accessible
-            const buildRec = record.load({ type: 'assemblybuild', id: buildId, isDynamic: true });
-            const builtQty = buildRec.getValue({ fieldId: 'quantity' });
+            if (!allBuildIds.length) { context.response.write(errorPage('No Assembly Builds found for WO ' + woNumber + '.')); return; }
 
             // Look up most recent pre-build entry per lot for this WO
             const prebuildMap = {};
@@ -66,20 +58,30 @@ function (record, search, runtime, log, url) {
                 log.debug({ title: 'prebuildMap lookup failed', details: e.message });
             }
 
-            const rows = [];
+            // Pass 1: load every build once, collect component item IDs and raw lot/bin data
+            const componentItemIdSet = {};
+            const buildLineData      = [];
 
-            // --- Assembly row intentionally excluded ---
-            // The finished assembly item is not a candidate for scrap logging.
-            // Only BOM components are shown on this form.
+            allBuildIds.forEach(function (buildId) {
+                const buildRec  = record.load({ type: 'assemblybuild', id: buildId, isDynamic: true });
+                const lineCount = buildRec.getLineCount({ sublistId: 'component' });
+                const lines     = [];
 
-            // --- Component rows ---
-            const lineCount = buildRec.getLineCount({ sublistId: 'component' });
+                for (let i = 0; i < lineCount; i++) {
+                    const itemId  = String(buildRec.getSublistValue({ sublistId: 'component', fieldId: 'item',     line: i }));
+                    const qtyUsed = buildRec.getSublistValue({         sublistId: 'component', fieldId: 'quantity', line: i }) || 0;
+                    componentItemIdSet[itemId] = true;
 
-            const componentItemIds = [];
-            for (let i = 0; i < lineCount; i++) {
-                componentItemIds.push(String(buildRec.getSublistValue({ sublistId: 'component', fieldId: 'item', line: i })));
-            }
+                    buildRec.selectLine({ sublistId: 'component', line: i });
+                    // Extract with isLotTracked=true to capture lots; filtered after name lookup
+                    const { lots, bins } = extractLotsAndBins(buildRec, true);
+                    lines.push({ itemId, qtyUsed, lots, bins });
+                }
+                buildLineData.push(lines);
+            });
 
+            // Item name and UOM lookup
+            const componentItemIds = Object.keys(componentItemIdSet);
             const itemNameMap = {};
             const itemUomMap  = {};
             if (componentItemIds.length > 0) {
@@ -98,37 +100,55 @@ function (record, search, runtime, log, url) {
                 });
             }
 
-            for (let i = 0; i < lineCount; i++) {
-                const itemId   = String(buildRec.getSublistValue({ sublistId: 'component', fieldId: 'item',     line: i }));
-                const itemName = itemNameMap[itemId] || itemId;
-                const uom      = itemUomMap[itemId]  || '';
-                const qtyUsed  = buildRec.getSublistValue({ sublistId: 'component', fieldId: 'quantity', line: i }) || 0;
+            // Pass 2: build deduplicated rows across all builds
+            // Key: itemId+'|'+lotId for lot-tracked, itemId+'|' for non-lot
+            const rowMap = {};
 
-                const prefix       = (itemName || '').trim().substring(0, 2).toUpperCase();
-                const isLotTracked = prefix === 'BS' || prefix === 'MX';
+            buildLineData.forEach(function (lines) {
+                lines.forEach(function (line) {
+                    const itemId       = line.itemId;
+                    const itemName     = itemNameMap[itemId] || itemId;
+                    const uom          = itemUomMap[itemId]  || '';
+                    const prefix       = (itemName || '').trim().substring(0, 2).toUpperCase();
+                    const isLotTracked = prefix === 'BS' || prefix === 'MX';
 
-                buildRec.selectLine({ sublistId: 'component', line: i });
-                const { lots, bins } = extractLotsAndBins(buildRec, isLotTracked);
+                    log.debug({ title: 'Component ' + itemName, details: 'lots=' + line.lots.length + ' bins=' + line.bins.length });
 
-                log.debug({ title: 'Component ' + itemName, details: 'lots=' + lots.length + ' bins=' + bins.length });
-
-                if (isLotTracked && lots.length > 0) {
-                    lots.forEach(function (lot) {
-                        const prebuildWeight = prebuildMap[lot.id] ? prebuildMap[lot.id].weight : null;
-                        const lotQtyUsed = lot.qty || qtyUsed;
-                        rows.push({
-                            itemId, itemName, uom, isLotTracked: true, isAssembly: false,
-                            qtyUsed: lotQtyUsed, lotId: lot.id, lotText: lot.text,
-                            lots, bins,
-                            prebuildWeight,
-                            lockedBinId:   lot.binId   || '',
-                            lockedBinText: lot.binText || ''
+                    if (isLotTracked && line.lots.length > 0) {
+                        line.lots.forEach(function (lot) {
+                            const key = itemId + '|' + lot.id;
+                            if (!rowMap[key]) {
+                                const prebuildWeight = prebuildMap[lot.id] ? prebuildMap[lot.id].weight : null;
+                                rowMap[key] = {
+                                    itemId, itemName, uom, isLotTracked: true, isAssembly: false,
+                                    qtyUsed: lot.qty || line.qtyUsed, lotId: lot.id, lotText: lot.text,
+                                    bins: line.bins,
+                                    prebuildWeight,
+                                    lockedBinId:   lot.binId   || '',
+                                    lockedBinText: lot.binText || ''
+                                };
+                            }
                         });
-                    });
-                } else {
-                    rows.push({ itemId, itemName, uom, isLotTracked: false, isAssembly: false, qtyUsed, lotId: '', lotText: '', lots: [], bins, prebuildWeight: null, lockedBinId: '', lockedBinText: '' });
-                }
-            }
+                    } else if (!isLotTracked) {
+                        const key = itemId + '|';
+                        if (!rowMap[key]) {
+                            rowMap[key] = {
+                                itemId, itemName, uom, isLotTracked: false, isAssembly: false,
+                                qtyUsed: line.qtyUsed, lotId: '', lotText: '',
+                                bins: line.bins, prebuildWeight: null,
+                                lockedBinId: '', lockedBinText: ''
+                            };
+                        }
+                    }
+                });
+            });
+
+            // Sort: EP (non-lot) first, then BS/MX sorted by itemName then lotText
+            const rows = Object.values(rowMap).sort(function (a, b) {
+                if (a.isLotTracked !== b.isLotTracked) return a.isLotTracked ? 1 : -1;
+                if (a.itemName !== b.itemName) return a.itemName < b.itemName ? -1 : 1;
+                return a.lotText < b.lotText ? -1 : 1;
+            });
 
             context.response.write(renderForm(woId, woNumber, rows));
 
@@ -159,8 +179,8 @@ function (record, search, runtime, log, url) {
                     const lotId   = invDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'issueinventorynumber', line: j });
                     const lotText = invDetail.getSublistText({  sublistId: 'inventoryassignment', fieldId: 'issueinventorynumber', line: j }) || '';
 
-                    let binId   = invDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'binnumber', line: j });
-                    let binText = invDetail.getSublistText({  sublistId: 'inventoryassignment', fieldId: 'binnumber', line: j }) || '';
+                    let binId   = invDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'binnumber',  line: j });
+                    let binText = invDetail.getSublistText({  sublistId: 'inventoryassignment', fieldId: 'binnumber',  line: j }) || '';
                     if (!binId) {
                         binId   = invDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'binnumbers', line: j });
                         binText = invDetail.getSublistText({  sublistId: 'inventoryassignment', fieldId: 'binnumbers', line: j }) || '';
@@ -195,8 +215,8 @@ function (record, search, runtime, log, url) {
             const invDetail   = buildRec.getSubrecord({ fieldId: 'inventorydetail' });
             const assignCount = invDetail.getLineCount({ sublistId: 'inventoryassignment' });
             for (let j = 0; j < assignCount; j++) {
-                let binId   = invDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'binnumber', line: j });
-                let binText = invDetail.getSublistText({  sublistId: 'inventoryassignment', fieldId: 'binnumber', line: j }) || '';
+                let binId   = invDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'binnumber',  line: j });
+                let binText = invDetail.getSublistText({  sublistId: 'inventoryassignment', fieldId: 'binnumber',  line: j }) || '';
                 if (!binId) {
                     binId   = invDetail.getSublistValue({ sublistId: 'inventoryassignment', fieldId: 'binnumbers', line: j });
                     binText = invDetail.getSublistText({  sublistId: 'inventoryassignment', fieldId: 'binnumbers', line: j }) || '';
@@ -313,10 +333,10 @@ function (record, search, runtime, log, url) {
         // --- EP table rows (simplified: no lot/prebuild/finalbag columns) ---
         let epTableRows = '';
         epRows.forEach(function (entry, n) {
-            const row      = entry.row;
-            const i        = entry.idx;
-            const rowClass = n % 2 === 0 ? 'row-even' : 'row-odd';
-            const binCell  = '<td>' + buildBinDropdown('bin_id_' + i, row.bins, row.lockedBinId) + '</td>';
+            const row       = entry.row;
+            const i         = entry.idx;
+            const rowClass  = n % 2 === 0 ? 'row-even' : 'row-odd';
+            const binCell   = '<td>' + buildBinDropdown('bin_id_' + i, row.bins, row.lockedBinId) + '</td>';
             const scrapCell = '<td class="td-scrap"><input type="number" name="scrap_qty_' + i + '" min="0" step="0.01" class="field-num" placeholder="0" /></td>';
 
             epTableRows +=
@@ -327,16 +347,16 @@ function (record, search, runtime, log, url) {
                 scrapCell +
                 binCell +
                 '</tr>' +
-                '<input type="hidden" name="item_id_'        + i + '" value="' + esc(row.itemId)      + '" />' +
-                '<input type="hidden" name="item_name_'      + i + '" value="' + esc(row.itemName)     + '" />' +
-                '<input type="hidden" name="qty_used_'       + i + '" value="' + esc(row.qtyUsed)      + '" />' +
+                '<input type="hidden" name="item_id_'        + i + '" value="' + esc(row.itemId)  + '" />' +
+                '<input type="hidden" name="item_name_'      + i + '" value="' + esc(row.itemName) + '" />' +
+                '<input type="hidden" name="qty_used_'       + i + '" value="' + esc(row.qtyUsed)  + '" />' +
                 '<input type="hidden" name="is_lot_tracked_' + i + '" value="false" />' +
                 '<input type="hidden" name="is_assembly_'    + i + '" value="false" />' +
                 '<input type="hidden" name="lot_id_'         + i + '" value="" />' +
                 '<input type="hidden" name="lot_text_'       + i + '" value="" />';
         });
 
-        // --- BS/MX table rows (full columns with lot/prebuild/finalbag) ---
+        // --- BS/MX table rows ---
         let bsMxTableRows = '';
         bsMxRows.forEach(function (entry, n) {
             const row      = entry.row;
@@ -344,16 +364,15 @@ function (record, search, runtime, log, url) {
             const rowClass = n % 2 === 0 ? 'row-even' : 'row-odd';
             const dataLot  = esc(row.lotText);
 
-            const lotCell = row.lots && row.lots.length > 0
-                ? '<td class="td-lot">' + buildLotDropdown('lot_id_' + i, row.lots, row.lotId) + '</td>'
-                : '<td class="td-lot muted">No lots found</td>';
+            // Lot shown as plain text — each row is already one specific lot
+            const lotCell = '<td class="td-lot">' + esc(row.lotText || '—') + '</td>';
 
             let binCell;
             if (row.lockedBinId) {
                 binCell = '<td>' + esc(row.lockedBinText) +
                     '<input type="hidden" name="bin_id_' + i + '" value="' + esc(row.lockedBinId) + '" /></td>';
             } else {
-                binCell = '<td>' + buildBinDropdown('bin_id_' + i, row.bins, row.lockedBinId) + '</td>';
+                binCell = '<td>' + buildBinDropdown('bin_id_' + i, row.bins, '') + '</td>';
             }
 
             const prebuildCell = row.prebuildWeight !== null
@@ -381,13 +400,13 @@ function (record, search, runtime, log, url) {
                 scrapCell +
                 binCell +
                 '</tr>' +
-                '<input type="hidden" name="item_id_'        + i + '" value="' + esc(row.itemId)      + '" />' +
-                '<input type="hidden" name="item_name_'      + i + '" value="' + esc(row.itemName)     + '" />' +
-                '<input type="hidden" name="qty_used_'       + i + '" value="' + esc(row.qtyUsed)      + '" />' +
+                '<input type="hidden" name="item_id_'        + i + '" value="' + esc(row.itemId)   + '" />' +
+                '<input type="hidden" name="item_name_'      + i + '" value="' + esc(row.itemName)  + '" />' +
+                '<input type="hidden" name="qty_used_'       + i + '" value="' + esc(row.qtyUsed)   + '" />' +
                 '<input type="hidden" name="is_lot_tracked_' + i + '" value="true" />' +
                 '<input type="hidden" name="is_assembly_'    + i + '" value="false" />' +
-                '<input type="hidden" name="lot_id_'         + i + '" value="' + esc(row.lotId)        + '" />' +
-                '<input type="hidden" name="lot_text_'       + i + '" value="' + esc(row.lotText)      + '" />';
+                '<input type="hidden" name="lot_id_'         + i + '" value="' + esc(row.lotId)     + '" />' +
+                '<input type="hidden" name="lot_text_'       + i + '" value="' + esc(row.lotText)   + '" />';
         });
 
         const epSection = epRows.length === 0 ? '' :
@@ -481,7 +500,7 @@ function (record, search, runtime, log, url) {
                 'var rows=document.querySelectorAll("#scrapTbody tr");' +
                 'var visible=0;' +
                 'rows.forEach(function(row){' +
-                    'var lot=(row.getAttribute("data-lot")||"").toLowerCase();' +
+                    'var lot=(row.getAttribute("data-lot")||"|").toLowerCase();' +
                     'var show=!q||lot.indexOf(q)!==-1;' +
                     'row.style.display=show?"":"none";' +
                     'if(show)visible++;' +
@@ -489,7 +508,7 @@ function (record, search, runtime, log, url) {
                 'document.getElementById("noMatchMsg").style.display=(q&&visible===0)?"block":"none";' +
             '}' +
             'function calcScrap(i,pre,qtyUsed){' +
-                'var finalEl=document.querySelector("[name=\'final_bag_"+i+"\']");' +
+                'var finalEl=document.querySelector("[name=\'final_bag_"+i+"\']||");' +
                 'if(!finalEl)return;' +
                 'var finalBag=parseFloat(finalEl.value)||0;' +
                 'var scrap=pre-qtyUsed-finalBag;' +
@@ -497,16 +516,9 @@ function (record, search, runtime, log, url) {
                 'var el=document.getElementById("scrap_calc_"+i);' +
                 'if(el)el.value=scrap>0?scrap.toFixed(3):"";' +
             '}' +
-            'function validateForm(){var n=' + rows.length + ',h=false;for(var i=0;i<n;i++){var q=document.querySelector("[name=\'scrap_qty_"+i+"\']");if(!q)continue;var v=parseFloat(q.value)||0;if(v>0){h=true;var b=document.querySelector("[name=\'bin_id_"+i+"\']");if(!b||!b.value){alert("Please select a Bin Number for all items with Scrap Qty > 0.");if(b)b.focus();return false;}}}if(!h){alert("Please enter a Scrap Qty for at least one item.");return false;}return true;}' +
+            'function validateForm(){var n=' + rows.length + ',h=false;for(var i=0;i<n;i++){var q=document.querySelector("[name=\'scrap_qty_"+i+"\']||");if(!q)continue;var v=parseFloat(q.value)||0;if(v>0){h=true;var b=document.querySelector("[name=\'bin_id_"+i+"\']||");if(!b||!b.value){alert("Please select a Bin Number for all items with Scrap Qty > 0.");if(b)b.focus();return false;}}}if(!h){alert("Please enter a Scrap Qty for at least one item.");return false;}return true;}' +
             '<\/script>' +
             '</body></html>';
-    }
-
-    function buildLotDropdown(name, lots, selectedId) {
-        if (!lots || !lots.length) return '<span class="muted">No lots found</span>';
-        let h = '<select name="' + esc(name) + '" class="field-select">';
-        lots.forEach(function (l) { h += '<option value="' + esc(l.id) + '"' + (String(l.id) === String(selectedId) ? ' selected' : '') + '>' + esc(l.text) + '</option>'; });
-        return h + '</select>';
     }
 
     function buildBinDropdown(name, bins, selectedId) {
