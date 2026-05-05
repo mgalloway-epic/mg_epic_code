@@ -529,22 +529,29 @@ function (record, search, runtime, log, url) {
             '<style>' +
             '*, *::before, *::after { box-sizing: border-box; }' +
             'body { margin: 0; background: #f5f7f9; font-family: Arial, sans-serif; font-size: 12px; color: #333; }' +
+            /* Page title bar */
             '.page-header { background: #fff; border-bottom: 2px solid #c8d2e0; padding: 12px 20px; }' +
             '.page-header h1 { margin: 0 0 3px; font-size: 15px; font-weight: bold; color: #1f1f1f; letter-spacing: .01em; }' +
             '.page-header .wo-ref { font-size: 11px; color: #666; }' +
             '.page-header .wo-ref span { color: #1778c5; font-weight: bold; }' +
+            /* Toolbar */
             '.btn-bar { background: #edf1f7; border-bottom: 1px solid #c0cad8; padding: 6px 20px; display: flex; gap: 8px; align-items: center; }' +
+            /* NS blue primary button */
             '.btn-primary { background: #1778c5; color: #fff; border: 1px solid #1060a3; padding: 5px 22px; font-size: 12px; font-weight: bold; cursor: pointer; border-radius: 2px; white-space: nowrap; line-height: 1.6; }' +
             '.btn-primary:hover { background: #1464a8; }' +
+            /* NS cancel button */
             '.btn-secondary { background: #fff; color: #444; border: 1px solid #aaa; padding: 5px 16px; font-size: 12px; cursor: pointer; border-radius: 2px; white-space: nowrap; line-height: 1.6; }' +
             '.btn-secondary:hover { background: #f4f6f9; }' +
             '.page-body { padding: 16px 20px; }' +
             '.hint { font-size: 11px; color: #666; margin-bottom: 14px; line-height: 1.65; max-width: 820px; }' +
+            /* Table */
             'table { width: 100%; border-collapse: collapse; background: #fff; }' +
+            /* Scrollable wrapper — outer border lives here so it encapsulates cleanly */
             '.table-scroll    { overflow: auto; max-height: 420px; border: 1px solid #b4bece; }' +
             '.table-scroll-sm { overflow: auto; max-height: 280px; border: 1px solid #b4bece; }' +
             'th { background: #c5d0e0; color: #2a2a2a; padding: 7px 12px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #a2b0c4; vertical-align: top; position: sticky; top: 0; z-index: 1; }' +
             'td { padding: 6px 12px; border-bottom: 1px solid #dde3ed; border-right: 1px solid #dde3ed; vertical-align: middle; font-size: 12px; }' +
+            /* Alternating rows — white / very subtle blue tint */
             '.row-even td { background: #fff; }' +
             '.row-odd  td { background: #f3f6fb; }' +
             '.td-item { min-width: 180px; } .td-lot { min-width: 160px; } .td-bin { min-width: 100px; }' +
@@ -553,20 +560,25 @@ function (record, search, runtime, log, url) {
             '.muted { color: #aaa; font-style: italic; }' +
             '.adj-pos { color: #1a6e1a; font-weight: bold; }' +
             '.adj-neg { color: #b30000; font-weight: bold; }' +
+            /* Number input */
             '.field-num { width: 110px; padding: 4px 7px; border: 1px solid #aaa; font-size: 12px; text-align: right; background: #fff; transition: border-color .15s; }' +
             '.field-num:focus { border-color: #1778c5; outline: none; box-shadow: inset 0 1px 2px rgba(0,0,0,.07); }' +
+            /* Lot search in header */
             '.lot-search-wrap { position: relative; margin-top: 6px; }' +
             '.lot-search-wrap::before { content: "\\1F50D"; position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 10px; pointer-events: none; opacity: .45; }' +
             '.lot-search { width: 100%; padding: 4px 7px 4px 22px; border: 1px solid #aaa; font-size: 11px; font-weight: normal; letter-spacing: 0; text-transform: none; color: #333; background: #fff; transition: border-color .15s; }' +
             '.lot-search:focus { border-color: #1778c5; outline: none; }' +
             '.lot-search::placeholder { color: #bbb; font-style: italic; }' +
             '.no-match-msg { display: none; padding: 14px; text-align: center; color: #999; font-style: italic; font-size: 12px; background: #fff; border: 1px solid #b4bece; border-top: none; }' +
+            /* Section label */
             '.section-title { margin: 24px 0 9px; font-size: 11px; font-weight: bold; color: #555; border-bottom: 1px solid #c8d2e0; padding-bottom: 5px; text-transform: uppercase; letter-spacing: .06em; }' +
             '</style></head><body>' +
+            /* Page title - NS record header style */
             '<div class="page-header">' +
                 '<h1>Pre-Build Weigh-In</h1>' +
                 '<div class="wo-ref">Work Order: <span>' + esc(woNumber) + '</span></div>' +
             '</div>' +
+            /* NS-style toolbar with action buttons at the top */
             '<div class="btn-bar">' +
                 '<button type="submit" form="prebuildForm" class="btn-primary">Submit Weigh-In</button>' +
                 '<button type="button" class="btn-secondary" onclick="window.close();">Cancel</button>' +
