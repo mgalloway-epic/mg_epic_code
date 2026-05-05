@@ -102,8 +102,9 @@ function (record, search, runtime, log, url) {
             // Pass 2: build deduplicated rows across all builds
             // Key: itemId+'|'+lotId for lot-tracked, itemId+'|' for non-lot
             const rowMap = {};
+            const epBuildSeen = {}; // prevents counting an EP item more than once per build
 
-            buildLineData.forEach(function (lines) {
+            buildLineData.forEach(function (lines, buildIndex) {
                 lines.forEach(function (line) {
                     const itemId       = line.itemId;
                     const itemName     = itemNameMap[itemId] || itemId;
@@ -129,6 +130,12 @@ function (record, search, runtime, log, url) {
                             }
                         });
                     } else if (!isLotTracked) {
+                        // Only count this item once per build — the same EP line can repeat
+                        // once for every BS/MX lot used in the same build component sublist
+                        const buildKey = itemId + '|' + buildIndex;
+                        if (epBuildSeen[buildKey]) return;
+                        epBuildSeen[buildKey] = true;
+
                         const key = itemId + '|';
                         if (!rowMap[key]) {
                             rowMap[key] = {
