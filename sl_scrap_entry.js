@@ -137,6 +137,8 @@ function (record, search, runtime, log, url) {
                                 bins: line.bins, prebuildWeight: null,
                                 lockedBinId: '', lockedBinText: ''
                             };
+                        } else {
+                            rowMap[key].qtyUsed = (parseFloat(rowMap[key].qtyUsed) || 0) + (parseFloat(line.qtyUsed) || 0);
                         }
                     }
                 });
