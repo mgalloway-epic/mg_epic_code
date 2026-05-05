@@ -81,13 +81,19 @@ function (record, search, runtime, log, url) {
             }
 
             const itemNameMap = {};
+            const itemUomMap  = {};
             if (componentItemIds.length > 0) {
+                const colItemName  = search.createColumn({ name: 'itemid' });
+                const colStockUnit = search.createColumn({ name: 'stockunit' });
                 search.create({
                     type:    search.Type.ITEM,
                     filters: [['internalid', 'anyof', componentItemIds]],
-                    columns: ['internalid', 'itemid']
+                    columns: [search.createColumn({ name: 'internalid' }), colItemName, colStockUnit]
                 }).run().each(function (r) {
-                    itemNameMap[r.id] = r.getValue('itemid') || r.id;
+                    const v = r.getValue(colItemName);
+                    itemNameMap[r.id] = (v && typeof v === 'string') ? v : String(r.id);
+                    const u = r.getText(colStockUnit);
+                    itemUomMap[r.id]  = (u && typeof u === 'string') ? u : '';
                     return true;
                 });
             }
@@ -95,6 +101,7 @@ function (record, search, runtime, log, url) {
             for (let i = 0; i < lineCount; i++) {
                 const itemId   = String(buildRec.getSublistValue({ sublistId: 'component', fieldId: 'item',     line: i }));
                 const itemName = itemNameMap[itemId] || itemId;
+                const uom      = itemUomMap[itemId]  || '';
                 const qtyUsed  = buildRec.getSublistValue({ sublistId: 'component', fieldId: 'quantity', line: i }) || 0;
 
                 const prefix       = (itemName || '').trim().substring(0, 2).toUpperCase();
@@ -110,7 +117,7 @@ function (record, search, runtime, log, url) {
                         const prebuildWeight = prebuildMap[lot.id] ? prebuildMap[lot.id].weight : null;
                         const lotQtyUsed = lot.qty || qtyUsed;
                         rows.push({
-                            itemId, itemName, isLotTracked: true, isAssembly: false,
+                            itemId, itemName, uom, isLotTracked: true, isAssembly: false,
                             qtyUsed: lotQtyUsed, lotId: lot.id, lotText: lot.text,
                             lots, bins,
                             prebuildWeight,
@@ -119,7 +126,7 @@ function (record, search, runtime, log, url) {
                         });
                     });
                 } else {
-                    rows.push({ itemId, itemName, isLotTracked: false, isAssembly: false, qtyUsed, lotId: '', lotText: '', lots: [], bins, prebuildWeight: null, lockedBinId: '', lockedBinText: '' });
+                    rows.push({ itemId, itemName, uom, isLotTracked: false, isAssembly: false, qtyUsed, lotId: '', lotText: '', lots: [], bins, prebuildWeight: null, lockedBinId: '', lockedBinText: '' });
                 }
             }
 
@@ -295,9 +302,10 @@ function (record, search, runtime, log, url) {
         let tableRows = '';
         rows.forEach(function (row, i) {
             const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd';
+            const dataLot  = row.isLotTracked ? esc(row.lotText) : '';
 
             const lotCell = row.isLotTracked && row.lots && row.lots.length > 0
-                ? '<td class="td-lot">'        + buildLotDropdown('lot_id_' + i, row.lots, row.lotId) + '</td>'
+                ? '<td class="td-lot">'      + buildLotDropdown('lot_id_' + i, row.lots, row.lotId) + '</td>'
                 : '<td class="td-lot muted">N/A</td>';
 
             let binCell;
@@ -310,7 +318,7 @@ function (record, search, runtime, log, url) {
 
             let prebuildCell;
             if (row.isLotTracked && row.prebuildWeight !== null) {
-                prebuildCell = '<td class="td-qty">' + esc(row.prebuildWeight) + '</td>';
+                prebuildCell = '<td class="td-qty right">' + esc(row.prebuildWeight) + '</td>';
             } else if (row.isLotTracked) {
                 prebuildCell = '<td class="td-qty muted">Not weighed</td>';
             } else {
@@ -321,18 +329,21 @@ function (record, search, runtime, log, url) {
             if (row.isLotTracked && row.prebuildWeight !== null) {
                 finalBagCell = '<td class="td-scrap"><input type="number" name="final_bag_' + i + '" min="0" step="0.001" class="field-num" placeholder="0.000"' +
                     ' oninput="calcScrap(' + i + ',' + row.prebuildWeight + ',' + row.qtyUsed + ')" /></td>';
-                scrapCell = '<td class="td-scrap"><input type="number" name="scrap_qty_' + i + '" id="scrap_calc_' + i + '" class="field-num" readonly style="background:#f5f5f5;color:#333;" placeholder="auto" /></td>';
+                scrapCell = '<td class="td-scrap"><input type="number" name="scrap_qty_' + i + '" id="scrap_calc_' + i + '" class="field-num" readonly style="background:#f5f7f9;" placeholder="auto" /></td>';
             } else {
                 finalBagCell = '<td class="td-scrap muted">N/A</td>';
                 scrapCell    = '<td class="td-scrap"><input type="number" name="scrap_qty_' + i + '" min="0" step="0.01" class="field-num" placeholder="0" /></td>';
             }
 
+            const uomCell = '<td class="td-uom">' + esc(row.uom || '—') + '</td>';
+
             tableRows +=
-                '<tr class="' + rowClass + '">' +
+                '<tr class="' + rowClass + '" data-lot="' + dataLot + '">' +
                 '<td class="td-item">' + esc(row.itemName) + '</td>' +
                 lotCell +
                 prebuildCell +
-                '<td class="td-qty">' + esc(row.qtyUsed) + '</td>' +
+                '<td class="td-qty right">' + esc(row.qtyUsed) + '</td>' +
+                uomCell +
                 finalBagCell +
                 scrapCell +
                 binCell +
@@ -346,40 +357,85 @@ function (record, search, runtime, log, url) {
                 '<input type="hidden" name="lot_text_'       + i + '" value="' + esc(row.lotText)      + '" />';
         });
 
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Log Scrap \u2014 ' + esc(woNumber) + '</title>' +
-            '<style>*,*::before,*::after{box-sizing:border-box;}body{margin:0;background:#f0f2f5;font-family:Arial,sans-serif;font-size:13px;color:#222;}' +
-            '.page-header{background:#1f3a6e;color:#fff;padding:18px 28px;}.page-header h1{margin:0;font-size:18px;font-weight:bold;}.page-header p{margin:4px 0 0;font-size:12px;opacity:.75;}' +
-            '.page-body{padding:24px 28px;}.hint{font-size:12px;color:#666;margin-bottom:16px;}' +
-            'table{width:100%;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.1);}' +
-            'th{background:#e4e8ee;color:#333;padding:10px 14px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #ccd0d8;}' +
-            'td{padding:9px 14px;border-bottom:1px solid #eef0f3;vertical-align:middle;}' +
-            '.row-even td{background:#fff;}.row-odd td{background:#fafbfc;}' +
-            '.td-item{min-width:220px;}.td-lot{min-width:160px;}.td-qty{text-align:right;min-width:110px;}.td-scrap{min-width:100px;}' +
-            '.muted{color:#aaa;font-style:italic;}' +
-            '.field-num{width:80px;padding:5px 8px;border:1px solid #ccc;border-radius:3px;font-size:13px;text-align:right;}' +
-            '.field-num:focus{border-color:#1f3a6e;outline:none;box-shadow:0 0 0 2px rgba(31,58,110,.15);}' +
-            '.field-select{padding:5px 8px;border:1px solid #ccc;border-radius:3px;font-size:13px;background:#fff;min-width:150px;max-width:300px;width:100%;}' +
-            '.field-select:focus{border-color:#1f3a6e;outline:none;}' +
-            '.actions{margin-top:20px;display:flex;gap:12px;justify-content:flex-end;}' +
-            '.btn-primary{background:#1f3a6e;color:#fff;border:none;padding:11px 32px;border-radius:4px;font-size:14px;font-weight:bold;cursor:pointer;}' +
-            '.btn-primary:hover{background:#162d56;}' +
-            '.btn-secondary{background:#fff;color:#444;border:1px solid #bbb;padding:11px 24px;border-radius:4px;font-size:14px;cursor:pointer;}' +
-            '.btn-secondary:hover{background:#f5f5f5;}' +
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Log Scrap — ' + esc(woNumber) + '</title>' +
+            '<style>' +
+            '*, *::before, *::after { box-sizing: border-box; }' +
+            'body { margin: 0; background: #f5f7f9; font-family: Arial, sans-serif; font-size: 12px; color: #333; }' +
+            '.page-header { background: #fff; border-bottom: 2px solid #c8d2e0; padding: 12px 20px; }' +
+            '.page-header h1 { margin: 0 0 3px; font-size: 15px; font-weight: bold; color: #1f1f1f; letter-spacing: .01em; }' +
+            '.page-header .wo-ref { font-size: 11px; color: #666; }' +
+            '.page-header .wo-ref span { color: #1778c5; font-weight: bold; }' +
+            '.btn-bar { background: #edf1f7; border-bottom: 1px solid #c0cad8; padding: 6px 20px; display: flex; gap: 8px; align-items: center; }' +
+            '.btn-primary { background: #1778c5; color: #fff; border: 1px solid #1060a3; padding: 5px 22px; font-size: 12px; font-weight: bold; cursor: pointer; border-radius: 2px; white-space: nowrap; line-height: 1.6; }' +
+            '.btn-primary:hover { background: #1464a8; }' +
+            '.btn-secondary { background: #fff; color: #444; border: 1px solid #aaa; padding: 5px 16px; font-size: 12px; cursor: pointer; border-radius: 2px; white-space: nowrap; line-height: 1.6; }' +
+            '.btn-secondary:hover { background: #f4f6f9; }' +
+            '.page-body { padding: 16px 20px; }' +
+            '.hint { font-size: 11px; color: #666; margin-bottom: 14px; line-height: 1.65; max-width: 900px; }' +
+            'table { width: 100%; border-collapse: collapse; background: #fff; }' +
+            '.table-scroll { overflow: auto; max-height: 480px; border: 1px solid #b4bece; }' +
+            'th { background: #c5d0e0; color: #2a2a2a; padding: 7px 12px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #a2b0c4; vertical-align: top; position: sticky; top: 0; z-index: 1; }' +
+            'td { padding: 6px 12px; border-bottom: 1px solid #dde3ed; border-right: 1px solid #dde3ed; vertical-align: middle; font-size: 12px; }' +
+            '.row-even td { background: #fff; }' +
+            '.row-odd  td { background: #f3f6fb; }' +
+            '.td-item { min-width: 220px; } .td-lot { min-width: 160px; } .td-qty { min-width: 120px; } .td-scrap { min-width: 110px; } .td-uom { min-width: 60px; color: #555; }' +
+            '.right { text-align: right; }' +
+            '.muted { color: #aaa; font-style: italic; }' +
+            '.field-num { width: 90px; padding: 4px 7px; border: 1px solid #aaa; font-size: 12px; text-align: right; background: #fff; transition: border-color .15s; }' +
+            '.field-num:focus { border-color: #1778c5; outline: none; box-shadow: inset 0 1px 2px rgba(0,0,0,.07); }' +
+            '.field-select { padding: 4px 7px; border: 1px solid #aaa; border-radius: 2px; font-size: 12px; background: #fff; min-width: 150px; max-width: 300px; width: 100%; transition: border-color .15s; }' +
+            '.field-select:focus { border-color: #1778c5; outline: none; }' +
+            '.lot-search-wrap { position: relative; margin-top: 6px; }' +
+            '.lot-search-wrap::before { content: "\\1F50D"; position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 10px; pointer-events: none; opacity: .45; }' +
+            '.lot-search { width: 100%; padding: 4px 7px 4px 22px; border: 1px solid #aaa; font-size: 11px; font-weight: normal; letter-spacing: 0; text-transform: none; color: #333; background: #fff; transition: border-color .15s; }' +
+            '.lot-search:focus { border-color: #1778c5; outline: none; }' +
+            '.lot-search::placeholder { color: #bbb; font-style: italic; }' +
+            '.no-match-msg { display: none; padding: 14px; text-align: center; color: #999; font-style: italic; font-size: 12px; background: #fff; border: 1px solid #b4bece; border-top: none; }' +
             '</style></head><body>' +
-            '<div class="page-header"><h1>Log Scrap</h1><p>Work Order: ' + esc(woNumber) + '</p></div>' +
+            '<div class="page-header">' +
+                '<h1>Log Scrap</h1>' +
+                '<div class="wo-ref">Work Order: <span>' + esc(woNumber) + '</span></div>' +
+            '</div>' +
+            '<div class="btn-bar">' +
+                '<button type="submit" form="scrapForm" class="btn-primary" onclick="return validateForm();">Submit Scrap Entry</button>' +
+                '<button type="button" class="btn-secondary" onclick="window.close();">Cancel</button>' +
+            '</div>' +
             '<div class="page-body">' +
             '<p class="hint">Enter a Scrap Qty for any items scrapped during this build. Leave blank or 0 to skip a line.</p>' +
-            '<form method="POST" action="' + esc(postUrl) + '" onsubmit="return validateForm();">' +
+            '<form id="scrapForm" method="POST" action="' + esc(postUrl) + '">' +
             '<input type="hidden" name="wo_id"     value="' + esc(woId)        + '" />' +
             '<input type="hidden" name="row_count" value="' + esc(rows.length) + '" />' +
+            '<div class="table-scroll">' +
             '<table><thead><tr>' +
-            '<th>Item</th><th>Lot Number</th><th style="text-align:right;">Pre-Build Weight</th><th style="text-align:right;">Qty Used in Build</th><th>Final Bag Weight</th><th>Scrap Qty</th><th>Bin Number</th>' +
-            '</tr></thead><tbody>' + tableRows + '</tbody></table>' +
-            '<div class="actions">' +
-            '<button type="button" class="btn-secondary" onclick="window.close();">Cancel</button>' +
-            '<button type="submit" class="btn-primary">Submit Scrap Entry</button>' +
-            '</div></form></div>' +
+            '<th>Item</th>' +
+            '<th>Lot Number' +
+                '<div class="lot-search-wrap">' +
+                    '<input type="text" id="lotSearch" class="lot-search" placeholder="Search lots…" oninput="filterLots(this.value);" autocomplete="off" />' +
+                '</div>' +
+            '</th>' +
+            '<th style="text-align:right;">Pre-Build Weight</th>' +
+            '<th style="text-align:right;">Qty Used in Build</th>' +
+            '<th>UOM</th>' +
+            '<th>Final Bag Weight</th>' +
+            '<th>Scrap Qty</th>' +
+            '<th>Bin Number</th>' +
+            '</tr></thead><tbody id="scrapTbody">' + tableRows + '</tbody></table>' +
+            '</div>' +
+            '<div id="noMatchMsg" class="no-match-msg">No lots match your search.</div>' +
+            '</form></div>' +
             '<script>' +
+            'function filterLots(q){' +
+                'q=q.trim().toLowerCase();' +
+                'var rows=document.querySelectorAll("#scrapTbody tr");' +
+                'var visible=0;' +
+                'rows.forEach(function(row){' +
+                    'var lot=(row.getAttribute("data-lot")||"").toLowerCase();' +
+                    'var show=!q||lot.indexOf(q)!==-1;' +
+                    'row.style.display=show?"":"none";' +
+                    'if(show)visible++;' +
+                '});' +
+                'document.getElementById("noMatchMsg").style.display=(q&&visible===0)?"block":"none";' +
+            '}' +
             'function calcScrap(i,pre,qtyUsed){' +
                 'var finalEl=document.querySelector("[name=\'final_bag_"+i+"\']");' +
                 'if(!finalEl)return;' +
@@ -413,11 +469,11 @@ function (record, search, runtime, log, url) {
 
     function successPage(woId, woNumber) {
         const woUrl = '/app/accounting/transactions/workord.nl?id=' + woId;
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=' + woUrl + '"><style>*{box-sizing:border-box;font-family:Arial,sans-serif;}body{background:#f0f2f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}.card{background:#fff;border-radius:8px;padding:48px 40px;text-align:center;max-width:420px;width:100%;box-shadow:0 2px 12px rgba(0,0,0,.1);}.icon{font-size:52px;color:#2e7d32;}h2{color:#2e7d32;margin:12px 0 8px;}p{color:#666;margin:4px 0;}a{display:inline-block;margin-top:24px;background:#1f3a6e;color:#fff;text-decoration:none;padding:11px 32px;border-radius:4px;font-size:14px;font-weight:bold;}</style></head><body><div class="card"><div class="icon">&#10003;</div><h2>Scrap Entry Submitted</h2><p>Inventory adjustments posted.</p><p style="font-size:12px;color:#999;margin-top:8px;">Redirecting to WO ' + esc(woNumber) + '...</p><a href="' + woUrl + '">Go to Work Order Now</a></div></body></html>';
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=' + woUrl + '"><style>*{box-sizing:border-box;font-family:Arial,sans-serif;}body{background:#f5f7f9;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}.card{background:#fff;border:1px solid #c8d2e0;padding:40px 36px;text-align:center;max-width:400px;width:100%;}.icon{font-size:42px;color:#1778c5;margin-bottom:8px;}h2{color:#1f1f1f;margin:0 0 8px;font-size:16px;}p{color:#666;margin:4px 0;font-size:12px;}a{display:inline-block;margin-top:20px;background:#1778c5;color:#fff;text-decoration:none;padding:6px 20px;font-size:12px;font-weight:bold;border:1px solid #1060a3;border-radius:2px;}</style></head><body><div class="card"><div class="icon">&#10003;</div><h2>Scrap Entry Submitted</h2><p>Inventory adjustments posted.</p><p style="color:#999;margin-top:8px;">Redirecting to WO ' + esc(woNumber) + '&#8230;</p><a href="' + woUrl + '">Go to Work Order Now</a></div></body></html>';
     }
 
     function errorPage(msg) {
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box;font-family:Arial,sans-serif;}body{background:#f0f2f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}.card{background:#fff;border-radius:8px;padding:48px 40px;text-align:center;max-width:480px;width:100%;box-shadow:0 2px 12px rgba(0,0,0,.1);}.icon{font-size:52px;color:#c62828;}h2{color:#c62828;margin:12px 0 8px;}p{color:#555;white-space:pre-wrap;text-align:left;font-size:13px;background:#fff8f8;border:1px solid #fcc;border-radius:4px;padding:12px;margin-top:12px;}button{margin-top:24px;background:#555;color:#fff;border:none;padding:11px 28px;border-radius:4px;font-size:14px;cursor:pointer;}</style></head><body><div class="card"><div class="icon">&#10007;</div><h2>Something went wrong</h2><p>' + esc(msg) + '</p><button onclick="window.history.back();">Go Back &amp; Fix</button></div></body></html>';
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box;font-family:Arial,sans-serif;}body{background:#f5f7f9;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}.card{background:#fff;border:1px solid #c8d2e0;padding:36px;text-align:center;max-width:480px;width:100%;}.icon{font-size:36px;color:#b30000;margin-bottom:8px;}h2{color:#1f1f1f;margin:0 0 8px;font-size:15px;}p{color:#555;white-space:pre-wrap;text-align:left;font-size:12px;background:#fff5f5;border:1px solid #e0b0b0;padding:10px;margin-top:10px;}button{margin-top:18px;background:#1778c5;color:#fff;border:1px solid #1060a3;padding:5px 18px;font-size:12px;font-weight:bold;cursor:pointer;border-radius:2px;}</style></head><body><div class="card"><div class="icon">&#10007;</div><h2>Something went wrong</h2><p>' + esc(msg) + '</p><button onclick="window.history.back();">Go Back &amp; Fix</button></div></body></html>';
     }
 
     return { onRequest };
