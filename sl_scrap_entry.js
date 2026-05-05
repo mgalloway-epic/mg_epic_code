@@ -299,34 +299,69 @@ function (record, search, runtime, log, url) {
     function renderForm(woId, woNumber, rows) {
         const postUrl = url.resolveScript({ scriptId: 'customscript_sl_scrap_entry', deploymentId: 'customdeploy_sl_scrap_entry' });
 
-        let tableRows = '';
+        // Split rows into two groups while preserving original index for POST field names
+        const epRows   = [];
+        const bsMxRows = [];
         rows.forEach(function (row, i) {
-            const rowClass = i % 2 === 0 ? 'row-even' : 'row-odd';
-            const dataLot  = row.isLotTracked ? esc(row.lotText) : '';
+            if (row.isLotTracked) {
+                bsMxRows.push({ row: row, idx: i });
+            } else {
+                epRows.push({ row: row, idx: i });
+            }
+        });
 
-            const lotCell = row.isLotTracked && row.lots && row.lots.length > 0
-                ? '<td class="td-lot">'      + buildLotDropdown('lot_id_' + i, row.lots, row.lotId) + '</td>'
-                : '<td class="td-lot muted">N/A</td>';
+        // --- EP table rows (simplified: no lot/prebuild/finalbag columns) ---
+        let epTableRows = '';
+        epRows.forEach(function (entry, n) {
+            const row      = entry.row;
+            const i        = entry.idx;
+            const rowClass = n % 2 === 0 ? 'row-even' : 'row-odd';
+            const binCell  = '<td>' + buildBinDropdown('bin_id_' + i, row.bins, row.lockedBinId) + '</td>';
+            const scrapCell = '<td class="td-scrap"><input type="number" name="scrap_qty_' + i + '" min="0" step="0.01" class="field-num" placeholder="0" /></td>';
+
+            epTableRows +=
+                '<tr class="' + rowClass + '">' +
+                '<td class="td-item">' + esc(row.itemName) + '</td>' +
+                '<td class="td-qty right">' + esc(row.qtyUsed) + '</td>' +
+                '<td class="td-uom">' + esc(row.uom || '—') + '</td>' +
+                scrapCell +
+                binCell +
+                '</tr>' +
+                '<input type="hidden" name="item_id_'        + i + '" value="' + esc(row.itemId)      + '" />' +
+                '<input type="hidden" name="item_name_'      + i + '" value="' + esc(row.itemName)     + '" />' +
+                '<input type="hidden" name="qty_used_'       + i + '" value="' + esc(row.qtyUsed)      + '" />' +
+                '<input type="hidden" name="is_lot_tracked_' + i + '" value="false" />' +
+                '<input type="hidden" name="is_assembly_'    + i + '" value="false" />' +
+                '<input type="hidden" name="lot_id_'         + i + '" value="" />' +
+                '<input type="hidden" name="lot_text_'       + i + '" value="" />';
+        });
+
+        // --- BS/MX table rows (full columns with lot/prebuild/finalbag) ---
+        let bsMxTableRows = '';
+        bsMxRows.forEach(function (entry, n) {
+            const row      = entry.row;
+            const i        = entry.idx;
+            const rowClass = n % 2 === 0 ? 'row-even' : 'row-odd';
+            const dataLot  = esc(row.lotText);
+
+            const lotCell = row.lots && row.lots.length > 0
+                ? '<td class="td-lot">' + buildLotDropdown('lot_id_' + i, row.lots, row.lotId) + '</td>'
+                : '<td class="td-lot muted">No lots found</td>';
 
             let binCell;
-            if (row.isLotTracked && row.lockedBinId) {
+            if (row.lockedBinId) {
                 binCell = '<td>' + esc(row.lockedBinText) +
                     '<input type="hidden" name="bin_id_' + i + '" value="' + esc(row.lockedBinId) + '" /></td>';
             } else {
                 binCell = '<td>' + buildBinDropdown('bin_id_' + i, row.bins, row.lockedBinId) + '</td>';
             }
 
-            let prebuildCell;
-            if (row.isLotTracked && row.prebuildWeight !== null) {
-                prebuildCell = '<td class="td-qty right">' + esc(row.prebuildWeight) + '</td>';
-            } else if (row.isLotTracked) {
-                prebuildCell = '<td class="td-qty muted">Not weighed</td>';
-            } else {
-                prebuildCell = '<td class="td-qty muted">N/A</td>';
-            }
+            const prebuildCell = row.prebuildWeight !== null
+                ? '<td class="td-qty right">' + esc(row.prebuildWeight) + '</td>'
+                : '<td class="td-qty muted">Not weighed</td>';
 
             let finalBagCell, scrapCell;
-            if (row.isLotTracked && row.prebuildWeight !== null) {
+            if (row.prebuildWeight !== null) {
                 finalBagCell = '<td class="td-scrap"><input type="number" name="final_bag_' + i + '" min="0" step="0.001" class="field-num" placeholder="0.000"' +
                     ' oninput="calcScrap(' + i + ',' + row.prebuildWeight + ',' + row.qtyUsed + ')" /></td>';
                 scrapCell = '<td class="td-scrap"><input type="number" name="scrap_qty_' + i + '" id="scrap_calc_' + i + '" class="field-num" readonly style="background:#f5f7f9;" placeholder="auto" /></td>';
@@ -335,15 +370,13 @@ function (record, search, runtime, log, url) {
                 scrapCell    = '<td class="td-scrap"><input type="number" name="scrap_qty_' + i + '" min="0" step="0.01" class="field-num" placeholder="0" /></td>';
             }
 
-            const uomCell = '<td class="td-uom">' + esc(row.uom || '—') + '</td>';
-
-            tableRows +=
+            bsMxTableRows +=
                 '<tr class="' + rowClass + '" data-lot="' + dataLot + '">' +
                 '<td class="td-item">' + esc(row.itemName) + '</td>' +
                 lotCell +
                 prebuildCell +
                 '<td class="td-qty right">' + esc(row.qtyUsed) + '</td>' +
-                uomCell +
+                '<td class="td-uom">' + esc(row.uom || '—') + '</td>' +
                 finalBagCell +
                 scrapCell +
                 binCell +
@@ -351,11 +384,43 @@ function (record, search, runtime, log, url) {
                 '<input type="hidden" name="item_id_'        + i + '" value="' + esc(row.itemId)      + '" />' +
                 '<input type="hidden" name="item_name_'      + i + '" value="' + esc(row.itemName)     + '" />' +
                 '<input type="hidden" name="qty_used_'       + i + '" value="' + esc(row.qtyUsed)      + '" />' +
-                '<input type="hidden" name="is_lot_tracked_' + i + '" value="' + esc(row.isLotTracked) + '" />' +
+                '<input type="hidden" name="is_lot_tracked_' + i + '" value="true" />' +
                 '<input type="hidden" name="is_assembly_'    + i + '" value="false" />' +
                 '<input type="hidden" name="lot_id_'         + i + '" value="' + esc(row.lotId)        + '" />' +
                 '<input type="hidden" name="lot_text_'       + i + '" value="' + esc(row.lotText)      + '" />';
         });
+
+        const epSection = epRows.length === 0 ? '' :
+            '<div class="section-title">EP Components</div>' +
+            '<div class="table-scroll">' +
+            '<table><thead><tr>' +
+            '<th>Item</th>' +
+            '<th style="text-align:right;">Qty Used in Build</th>' +
+            '<th>UOM</th>' +
+            '<th>Scrap Qty</th>' +
+            '<th>Bin Number</th>' +
+            '</tr></thead><tbody>' + epTableRows + '</tbody></table>' +
+            '</div>';
+
+        const bsMxSection = bsMxRows.length === 0 ? '' :
+            '<div class="section-title">BS / MX Components</div>' +
+            '<div class="table-scroll">' +
+            '<table><thead><tr>' +
+            '<th>Item</th>' +
+            '<th>Lot Number' +
+                '<div class="lot-search-wrap">' +
+                    '<input type="text" id="lotSearch" class="lot-search" placeholder="Search lots…" oninput="filterLots(this.value);" autocomplete="off" />' +
+                '</div>' +
+            '</th>' +
+            '<th style="text-align:right;">Pre-Build Weight</th>' +
+            '<th style="text-align:right;">Qty Used in Build</th>' +
+            '<th>UOM</th>' +
+            '<th>Final Bag Weight</th>' +
+            '<th>Scrap Qty</th>' +
+            '<th>Bin Number</th>' +
+            '</tr></thead><tbody id="scrapTbody">' + bsMxTableRows + '</tbody></table>' +
+            '</div>' +
+            '<div id="noMatchMsg" class="no-match-msg">No lots match your search.</div>';
 
         return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Log Scrap — ' + esc(woNumber) + '</title>' +
             '<style>' +
@@ -372,6 +437,8 @@ function (record, search, runtime, log, url) {
             '.btn-secondary:hover { background: #f4f6f9; }' +
             '.page-body { padding: 16px 20px; }' +
             '.hint { font-size: 11px; color: #666; margin-bottom: 14px; line-height: 1.65; max-width: 900px; }' +
+            '.section-title { margin: 20px 0 8px; font-size: 11px; font-weight: bold; color: #555; border-bottom: 1px solid #c8d2e0; padding-bottom: 5px; text-transform: uppercase; letter-spacing: .06em; }' +
+            '.section-title:first-of-type { margin-top: 0; }' +
             'table { width: 100%; border-collapse: collapse; background: #fff; }' +
             '.table-scroll { overflow: auto; max-height: 480px; border: 1px solid #b4bece; }' +
             'th { background: #c5d0e0; color: #2a2a2a; padding: 7px 12px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #a2b0c4; vertical-align: top; position: sticky; top: 0; z-index: 1; }' +
@@ -405,23 +472,8 @@ function (record, search, runtime, log, url) {
             '<form id="scrapForm" method="POST" action="' + esc(postUrl) + '">' +
             '<input type="hidden" name="wo_id"     value="' + esc(woId)        + '" />' +
             '<input type="hidden" name="row_count" value="' + esc(rows.length) + '" />' +
-            '<div class="table-scroll">' +
-            '<table><thead><tr>' +
-            '<th>Item</th>' +
-            '<th>Lot Number' +
-                '<div class="lot-search-wrap">' +
-                    '<input type="text" id="lotSearch" class="lot-search" placeholder="Search lots…" oninput="filterLots(this.value);" autocomplete="off" />' +
-                '</div>' +
-            '</th>' +
-            '<th style="text-align:right;">Pre-Build Weight</th>' +
-            '<th style="text-align:right;">Qty Used in Build</th>' +
-            '<th>UOM</th>' +
-            '<th>Final Bag Weight</th>' +
-            '<th>Scrap Qty</th>' +
-            '<th>Bin Number</th>' +
-            '</tr></thead><tbody id="scrapTbody">' + tableRows + '</tbody></table>' +
-            '</div>' +
-            '<div id="noMatchMsg" class="no-match-msg">No lots match your search.</div>' +
+            epSection +
+            bsMxSection +
             '</form></div>' +
             '<script>' +
             'function filterLots(q){' +
