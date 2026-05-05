@@ -99,6 +99,13 @@ function (record, search, runtime, log, url) {
                 });
             }
 
+            log.debug({ title: 'allBuildIds', details: 'count=' + allBuildIds.length + ' ids=' + allBuildIds.join(',') });
+            buildLineData.forEach(function (lines, bi) {
+                lines.forEach(function (line) {
+                    log.debug({ title: 'buildLine bi=' + bi, details: 'itemId=' + line.itemId + ' qtyUsed=' + line.qtyUsed + ' lots=' + line.lots.length });
+                });
+            });
+
             // Pass 2: build deduplicated rows across all builds
             // Key: itemId+'|'+lotId for lot-tracked, itemId+'|' for non-lot
             const rowMap = {};
