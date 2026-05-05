@@ -25,14 +25,18 @@ function (record, search, runtime, log, url) {
             const woRec    = record.load({ type: 'workorder', id: woId });
             const woNumber = woRec.getValue({ fieldId: 'tranid' });
 
-            // Get ALL assembly builds for this WO
+            // Get ALL assembly builds for this WO (deduplicated — search returns one row per component line)
             const allBuildIds = [];
+            const seenBuildIds = {};
             search.create({
                 type:    'assemblybuild',
                 filters: [['createdfrom', 'anyof', woId]],
                 columns: [search.createColumn({ name: 'internalid' })]
             }).run().each(function (r) {
-                allBuildIds.push(r.id);
+                if (!seenBuildIds[r.id]) {
+                    seenBuildIds[r.id] = true;
+                    allBuildIds.push(r.id);
+                }
                 return true;
             });
 
@@ -98,13 +102,6 @@ function (record, search, runtime, log, url) {
                     return true;
                 });
             }
-
-            log.debug({ title: 'allBuildIds', details: 'count=' + allBuildIds.length + ' ids=' + allBuildIds.join(',') });
-            buildLineData.forEach(function (lines, bi) {
-                lines.forEach(function (line) {
-                    log.debug({ title: 'buildLine bi=' + bi, details: 'itemId=' + line.itemId + ' qtyUsed=' + line.qtyUsed + ' lots=' + line.lots.length });
-                });
-            });
 
             // Pass 2: build deduplicated rows across all builds
             // Key: itemId+'|'+lotId for lot-tracked, itemId+'|' for non-lot
