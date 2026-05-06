@@ -70,7 +70,7 @@ function (search, email, render, runtime, log) {
     // ── DATA FETCH ────────────────────────────────────────────────────────────
 
     function fetchRows(startOfNextMonth, endOfNextMonth) {
-        var latestByLot = {}; // keyed by lotId, keeps only the newest GTH record per lot
+        var latestByLot = {}; // keyed by "itemId_lotId" — one entry per (item, lot) pair
 
         // Pull ALL active germ test records first — we deduplicate before date
         // filtering so an old record doesn't appear just because its re-test date
@@ -95,15 +95,20 @@ function (search, email, render, runtime, log) {
         pagedResults.pageRanges.forEach(function (pageRange) {
             var page = pagedResults.fetch({ index: pageRange.index });
             page.data.forEach(function (result) {
+                var itemId     = result.getValue('custrecord_gth_item');
                 var lotId      = result.getValue('custrecord_gth_lot');
                 var reTestDate = result.getValue('custrecord_gth_new_exp_date');
 
                 if (!lotId || !reTestDate) { return; }
 
-                // Keep only the newest re-test date per lot
-                if (!latestByLot[lotId] || new Date(reTestDate) > new Date(latestByLot[lotId].reTestDate)) {
-                    latestByLot[lotId] = {
-                        itemId:      result.getValue('custrecord_gth_item'),
+                // Composite key prevents a GTH record on a different item that shares
+                // the same lot internal ID from overwriting this lot's newest date.
+                var dedupKey = (itemId || '') + '_' + lotId;
+
+                // Keep only the newest re-test date per (item, lot)
+                if (!latestByLot[dedupKey] || new Date(reTestDate) > new Date(latestByLot[dedupKey].reTestDate)) {
+                    latestByLot[dedupKey] = {
+                        itemId:      itemId,
                         itemName:    result.getText('custrecord_gth_item')                                  || '',
                         itemDisplay: result.getValue({ name: 'displayname', join: 'custrecord_gth_item' }) || '',
                         lotId:       lotId,
@@ -134,12 +139,12 @@ function (search, email, render, runtime, log) {
             try {
                 var invFields = search.lookupFields({
                     type:    search.Type.INVENTORY_NUMBER,
-                    id:      id,
+                    id:      rec.lotId,
                     columns: ['quantityonhand']
                 });
                 qtyOnHand = parseFloat(invFields.quantityonhand || 0);
             } catch (e) {
-                log.error('GermReTestReport', 'Qty lookup failed for lot ID ' + id + ': ' + e.message);
+                log.error('GermReTestReport', 'Qty lookup failed for lot ID ' + rec.lotId + ': ' + e.message);
             }
 
             // Germ % formatting
